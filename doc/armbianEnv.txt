@@ -1,0 +1,8 @@
+verbosity=1
+bootlogo=false
+console=display
+overlay_prefix=rockchip
+rootdev=UUID=d8412a73-102b-4fe0-95ff-03e553190b63
+rootfstype=ext4
+overlays=rk3328-mkspi-disable-lcd-spi
+usbstoragequirks=0x2537:0x1066:u,0x2537:0x1068:u
