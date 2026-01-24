@@ -43,6 +43,15 @@ class OpenP4UI(BaseUi):
             ],
             "display_status": ["progress"],
             "output_pin caselight": ["value"],
+            #"output_pin sound": ["value"],
+
+            # Fans
+            "fan_generic cooling_fan": ["speed"],           # Part cooling
+            "fan_generic auxiliary_cooling_fan": ["speed"], # Auxiliary cooling
+            "fan_generic exhaust_fan": ["speed"],           # Exhaust fan
+            "heater_fan hotend_fan": ["speed"],             # Hotend fan
+            "heater_fan chamber_fan": ["speed"],            # Chamber fan
+            "fan_generic exhaust_fan": ["speed"],           # Exhaust fan
         }
 
     def onNotReady(self):

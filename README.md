@@ -3,6 +3,13 @@
 
 [Klip]per for H[MI] displays like TJC and Nextion
 
+# ⚠️ WARNING
+
+**absolutely no guarantees, you do everything at your own risk.**  
+
+This is **work in progress**. Do not use any of these software or instructions unless you know what you're doing!
+These modifications are for experienced users. If you are not comfortable with a command line, linux, and electronics, please stop here!
+
 ## Overview
 
 `klipmi` is a framework for integrate Klipper with HMI displays such as TJC and Nextion.
@@ -170,7 +177,7 @@ C:\Projects\TJC\xindi_800_480_V1.7.1.HMI"
 
 Ghidra is used for decompile and reverse engineering of xindi.
 
-### VNware Workstation
+### VMware Workstation
 
 Windows 10 Pro with Ghidra, TJC editor (USART HMI) Nextion editor installed.
 

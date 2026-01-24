@@ -139,4 +139,5 @@ class BaseUi(ABC):
 
     def changePage(self, page: Type[BasePage]):
         self.currentPage = page(self.state, self.changePage)
+        logging.info(f"changePage: self.currentPage: {self.currentPage}")
         asyncio.create_task(self.__executePageChange())

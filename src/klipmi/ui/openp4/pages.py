@@ -166,21 +166,29 @@ class OpenP4Page(BasePage):
             self.state.return_page = MainPage
 
     def handleNavBarButtons(self, component_id: int):
-        if component_id == 33:
+        if component_id == 33: #t33.txt="Home"
             # 0x21 go_to_main();
             self.changePage(MainPage)
-        elif component_id == 34:
+        elif component_id == 34: #t34.txt="Ctrl"
             # 0x22 go_to_control();
             self.changePage(ControlPage)
-        elif component_id == 35:
+        elif component_id == 35: #t35.txt="Doc"
             # 0x23 go_to_file_list();
             self.changePage(FileListPage)
-        elif component_id == 36:
+        elif component_id == 36: #t36.txt="Tool"
             # 0x24 go_to_adjust();
             self.changePage(ToolSelectPage)
-        elif component_id == 37:
+        elif component_id == 37: #t37.txt="Set"
             # 0x25 go_to_setting();
             self.changePage(LanguagePage)
+
+    def handleScreenSleep(self, page_id: int):
+        if page_id == 43: # screen_sleep
+            log.info(f"handleScreenSleep: current page class: {self.__class__}")
+            self.state.return_page = self.__class__  # Store current page class
+            #self._previous_page_id = self._current_page_id;
+            #self._current_page_id = param_1;
+            self.changePage(ScreenSleepPage)
 
     def go_to_main(self):
         state = self.data["print_stats"]["state"]
@@ -298,11 +306,6 @@ class OpenP4Page(BasePage):
             self.changePage(ResetPage)
         else:
             self.changePage(SystemOkPage)
-
-    def handleScreenSleep(self, page_id: int):
-        if page_id == 43: # screen_sleep
-            self.state.return_page = self.__class__  # Store current page class
-            self.changePage(ScreenSleepPage)
 
     def check_conflict(self):
         self.result = 0  # Initialize the return value
@@ -430,9 +433,16 @@ class MainPage(OpenP4Page):
             "%s.pco" % element, self._fontcolor_highlight if highlight else self._fontcolor_regular
         )
 
+    async def clear_cp0_image(self):
+        await self.state.display.command("vis cp0,0") # send_cmd_cp_close
+        await self.state.display.set("cp0_text.txt", "") # send_cmd_txt -> ("cp0_text",".txt="");
+        await self.state.display.set("add.txt", "") # send_cmd_txt -> ("add",".txt="");
+        # get_sub_dir_files_list
+
     async def init(self):
         # Trun off logging DEBUG
         logging.getLogger().setLevel(logging.INFO)
+        await self.state.display.set("b3.picc", 31)
 
     async def onDisplayEvent(self, type: EventType, data):
         #log.info(f"MainPage: onDisplayEvent: EventType: {type}, data: {data}")
@@ -460,6 +470,57 @@ class MainPage(OpenP4Page):
                 self.state.printer.firmwareRestart()
                 #self.state.printer.emergencyStop()
 
+            # parse_cmd_msg_from_tjc_screen -> tjc_event_clicked_handler -> motors_off -> FIRMWARE_RESTART;
+            elif data.component_id == 3:
+                # cp0 or t3 = click b3,1
+                self.page_files_pages = 0
+                self.page_files_current_pages = 0
+                self.page_files_folder_layers = 0
+
+                retuVal = self.check_conflict()
+                if retuVal == 0:
+                    pass
+
+                #TODO Main page filename
+                """
+                check_timelapse_state();
+                uVar10 = check_conflict();
+                puVar20 = (undefined4 *)(ulong)(uVar10 & 0xff);
+                if ((uVar10 & 0xff) == 0) {
+                    page_files_pages = 0;
+                    page_files_current_pages = 0;
+                    page_files_folder_layers = 0;
+                    std::__cxx11::string::operator=((string *)page_files_previous_path[abi:cxx11],"");
+                    std::__cxx11::string::operator=((string *)page_files_root_path[abi:cxx11],"gcodes/");
+                    std::__cxx11::string::operator=((string *)page_files_path[abi:cxx11],"");
+                    refresh_page_files(page_files_current_pages);
+                    bVar8 = std::operator==((string *)page_files_list_show_type[abi:cxx11],"[c]");
+                    puVar20 = (undefined4 *)(ulong)bVar8;
+                    if (bVar8) {
+                    clear_cp0_image();
+                    get_sub_dir_files_list(0);
+                    puVar20 = (undefined4 *)
+                                std::__cxx11::string::operator=((string *)file_mode[abi:cxx11],"Local");
+                    }
+                }
+                }
+
+                void refresh_page_files(int param_1)
+
+                {
+                string asStack_20 [32];
+                
+                std::operator+((string *)page_files_root_path[abi:cxx11],(string *)page_files_path[abi:cxx11]);
+                                    /* try { // try from 0063a190 to 0063a193 has its CatchHandler @ 0063a1a8 */
+                get_page_files_filelist(asStack_20);
+                std::__cxx11::string::~string(asStack_20);
+                set_page_files_show_list(param_1);
+                return;
+                }
+
+                """
+
+            # parse_cmd_msg_from_tjc_screen -> tjc_event_clicked_handler -> filament_extruder_target -> 
             elif data.component_id == 4:
                 self.state.heater_manager.set_heater_data("extruder")
                 self.state.return_page = self.__class__ # Store current page class
@@ -491,7 +552,7 @@ class MainPage(OpenP4Page):
 
     async def onPrinterStatusUpdate(self, data: dict):
         #log.info(f"MainPage: onPrinterStatusUpdate: EventType: {type}, data: {data}")
-        
+
         state = data["print_stats"]["state"]
         if state == "printing":
             self.changePage(PrintingPage)
@@ -520,7 +581,7 @@ class MainPage(OpenP4Page):
         #await self.setHighlight("b1", data["output_pin sound"]["value"] > 0)
 
         #TODO Main page filename
-"""
+        """
         filename = data["print_stats"]["filename"]
         await self.state.display.set("t3.txt", filename)
 
@@ -531,7 +592,7 @@ class MainPage(OpenP4Page):
                 self.filename = filename
                 await self.uploadThumbnail("cp0", 160, "4d4d4d", self.filename)
                 await self.state.display.command("vis cp0,1")
-"""
+        """
 
 
 class FileListPage(OpenP4Page):
@@ -1375,10 +1436,14 @@ class SleepModePage(OpenP4Page):
                 self.changePage(UpdatePage)
             elif data.component_id == 5:
                 self.changePage(MorePage)
-            #elif data.component_id == 6: # 5 minutes
-            #elif data.component_id == 7: # 15 minutes
-            #elif data.component_id == 8: # 30 minutes
-            #elif data.component_id == 9: # never
+            elif data.component_id == 6: # 5 minutes
+                pass
+            elif data.component_id == 7: # 15 minutes
+                pass
+            elif data.component_id == 8: # 30 minutes
+                pass
+            elif data.component_id == 9: # never
+                pass
             else:  
                 self.handleNavBarButtons(data.component_id)
 
@@ -1448,14 +1513,26 @@ class MorePage(OpenP4Page):
             elif data.component_id == 4:
                 self.changePage(UpdatePage)
             elif data.component_id == 5:
+                #if (current_page_id == 0x21) {
+                #    puVar20 = (undefined4 *)set_mks_oobe_enabled(true);
+                #}
+                #else {
+                #    puVar20 = (undefined4 *)page_to(0x21);
+                #}
                 self.changePage(MorePage)
-            #elif data.component_id == 3: # Screen Timeout
-            #elif data.component_id == 6: # After-sales Support
-            #elif data.component_id == 7: # Sound
-            #elif data.component_id == 8: # Restore Factory Settings
-            #elif data.component_id == 9: # Show Thumbnails
-            else:  
-                self.handleNavBarButtons(data.component_id)
+            elif data.component_id == 3: # Screen Timeout
+                self.changePage(SleepModePage)
+            elif data.component_id == 6: # After-sales Support
+                self.changePage(ServicePage)
+            elif data.component_id == 7: # Sound
+                pass
+                #SET_PIN PIN=beeper VALUE=1
+                #SET_PIN PIN=beeper VALUE=0
+                #void beep_on_off(void)
+                #if (printer_out_pin_beep_value == 0.0) {
+                #    "beep_on"
+                #else
+                #    "beep_off"
 
     async def onPrinterStatusUpdate(self, data: dict):
         pass
@@ -1498,6 +1575,184 @@ class ControlPage(OpenP4Page):
 
     async def onDisplayEvent(self, type: EventType, data):
         #log.info(f"ControlPage: onPrinterStatusUpdate: {data}")
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: # filament_extruder_target();
+                pass
+            elif data.component_id == 1: # filament_heater_bed_target();
+                pass
+            elif data.component_id == 2: # filament_hot_target();
+                pass
+            elif data.component_id < 6: # page_to(0x24);
+                self.changePage(ControlKbPage)
+            elif data.component_id == 6: # Button 1mm
+                self._printer_move_dist = 1.0
+                self._printer_filament_extruedr_dist = 1.0
+            elif data.component_id == 7: # Button 10mm
+                self._printer_move_dist = 10.0
+                self._printer_filament_extruedr_dist = 10.0
+            elif data.component_id == 8: # Button 50mm
+                self._printer_move_dist = 50.0
+                self._printer_filament_extruedr_dist = 50.0
+            elif data.component_id == 9: # Button 100mm
+                self._printer_move_dist = 100.0
+                self._printer_filament_extruedr_dist = 100.0
+            elif data.component_id == 10: # Button home
+                #self.check_conflict()
+                #uVar10 = check_conflict();
+                #puVar20 = (undefined4 *)(ulong)(uVar10 & 0xff);
+                #if ((uVar10 & 0xff) == 0) {
+                #G28 - Auto Home
+                self.state.printer.runGcode(f"G28") 
+                pass
+            elif data.component_id == 11: # Button motors off
+                #self.check_conflict()
+                # M84 - Disable steppers
+                self.state.printer.runGcode(f"M84")
+            elif data.component_id == 13: # Button box
+                #MultiColorSlots::SetSelectedSlotIndex((MultiColorSlots *)slot,-1);
+                #MultiColorSlots::SetSelectedBoxIndex((MultiColorSlots *)slot,0);
+                #puVar20 = (undefined4 *)MultiColorSlots::SlotParamsSetConfirm((MultiColorSlots *)slot);
+                #TODO Box count
+                box_count = 0
+                if box_count == 0:
+                    self.changePage(ZeroBoxPage) 
+                else:
+                    self.changePage(OneBoxPage)
+            elif data.component_id == 14: # Button y increase
+                #self.check_conflict(
+                self._unhomed_move_mode = 3
+                self.state.printer.runGcode(f"Y{str(self._printer_move_dist)}")
+                #FORCE_MOVE STEPPER=stepper_x DISTANCE=1 VELOCITY=130 ACCEL=20000
+            elif data.component_id == 15: # Button y decrease
+                #self.check_conflict()
+                self._unhomed_move_mode = 4
+                self.state.printer.runGcode(f"Y-{str(self._printer_move_dist)}")
+            elif data.component_id == 16: # Button x decrease
+                #self.check_conflict()
+                self._unhomed_move_mode = 2
+                self.state.printer.runGcode(f"X-{str(self._printer_move_dist)}")
+            elif data.component_id == 17: # Button x increase
+                #self.check_conflict()
+                self._unhomed_move_mode = 1
+                self.state.printer.runGcode(f"X{str(self._printer_move_dist)}")
+            elif data.component_id == 18: # Button z decrease
+                #self.check_conflict()
+                self._unhomed_move_mode = 5
+                self.state.printer.runGcode(f"Z-{str(self._printer_move_dist)}")
+            elif data.component_id == 19: # Button z increase
+                #self.check_conflict()
+                self._unhomed_move_mode = 6
+                self.state.printer.runGcode(f"Z{str(self._printer_move_dist)}")
+            elif data.component_id == 20: # Button filament retract
+                state = data["print_stats"]["state"]
+                if state == "printing":
+                    if self._page_filament_extrude_button == 0:
+                        self._printer_idle_timeout_state = "Printing"
+                        self._page_filament_extrude_button = 1
+                        await self.state.display.set("vis gm1,1")
+                        self.start_retract()
+                else:
+                    self.changePage(BtnConflictPage)
+            elif data.component_id == 21: # Button filament extrude
+                state = data["print_stats"]["state"]
+                if state == "printing":
+                    if self._page_filament_extrude_button == 0:
+                        self._printer_idle_timeout_state = "Printing"
+                        self._page_filament_extrude_button = 1
+                        await self.state.display.set("vis gm0,1")
+                        self.start_extrude()
+                else:
+                    self.changePage(BtnConflictPage)
+            elif data.component_id == 22: # Fan control
+                self.changePage(ControlSetFanPage)
+            else:
+                self.handleNavBarButtons(data.component_id)
+        elif type == EventType.NUMERIC_INPUT:
+            if data.component_id == 0: # Extruder target temperature
+                if MAX_EXTRUDER_TEMP < data.value:
+                    self._numeric_input = MAX_EXTRUDER_TEMP
+                else:
+                    self._numeric_input = data.value
+                self.state.printer.runGcode(f"SET_HEATER_TEMPERATURE HEATER=extruder TARGET={str(self._numeric_input)}")
+            elif data.component_id == 1: # Heatbed target temperature
+                if MAX_HEATER_BED_TEMP < data.value:
+                    self._numeric_input = MAX_HEATER_BED_TEMP
+                else:
+                    self._numeric_input = data.value
+                self.state.printer.runGcode(f"SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET={str(self._numeric_input)}")
+            elif data.component_id == 2: # Chamber target temperature
+                if MAX_CHAMBER_TEMP < data.value:
+                    self._numeric_input = MAX_CHAMBER_TEMP
+                else:
+                    self._numeric_input = data.value
+                self.state.printer.runGcode(f"SET_HEATER_TEMPERATURE HEATER=chamber TARGET={str(self._numeric_input)}")
+            else:
+                log.info(f"ControlKbPage: onDisplayEvent: EventType: {type}, data: {data}")
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        #log.info(f"ControlPage: onPrinterStatusUpdate: {data}")
+
+        state = data["print_stats"]["state"]
+        if state == "printing":
+            self.changePage(PrintingPage)
+
+        # Extruder actual value
+        await self.state.display.set("n0.val", int(data["extruder"]["temperature"]))
+
+        # Heatbed actual value
+        await self.state.display.set("n1.val", int(data["heater_bed"]["temperature"]))
+
+        # Chamber actual value
+        await self.state.display.set(
+            "n2.val", int(data["heater_generic chamber"]["temperature"])
+        )
+
+        """
+        # Fans handling with null checks
+        def get_fan_speed(fan_data: dict) -> int:
+            #Safely get fan speed as percentage
+            if not fan_data or fan_data.get("speed") is None:
+                return 0
+            return int(fan_data["speed"] * 100)
+
+        fan_speed_1 = get_fan_speed(data.get("fan_generic cooling_fan"))
+        await self.state.display.set("n6.val", fan_speed_1)
+
+        fan_speed_2 = get_fan_speed(data.get("fan_generic auxiliary_cooling_fan"))
+        await self.state.display.set("n7.val", fan_speed_2)
+
+        fan_speed_3 = get_fan_speed(data.get("heater_fan chamber_fan"))
+        await self.state.display.set("n8.val", fan_speed_3)
+
+        await self.setHighlight("b6", fan_speed_1 > 0)
+        await self.setHighlight("b7", fan_speed_2 > 0)
+        await self.setHighlight("b8", fan_speed_3 > 0)
+        """
+
+    def start_retract(self):
+        #self.state.printer.runGcode(f"M83\nG1 E-{str(self._printer_filament_extruedr_dist)} F300\n")
+        pass
+
+    def start_extrude(self):
+        #self.state.printer.runGcode(f"M83\nG1 E{str(self._printer_filament_extruedr_dist)} F300\n")
+        pass
+
+class ControlKbPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "control_kb"
+
+    @classproperty
+    def id(cls) -> int:
+        return 36
+    
+    # Initialize display components
+    async def init(self):
+        self.input_value = ""
+
+    async def onDisplayEvent(self, type: EventType, data):
+        #log.info(f"ControlKbPage: onDisplayEvent: EventType: {type}, data: {data}")
         if type == EventType.TOUCH:
             self.handleScreenSleep(data.page_id)
             if data.component_id == 0: # filament_extruder_target();
@@ -1588,110 +1843,11 @@ class ControlPage(OpenP4Page):
                 self.handleNavBarButtons(data.component_id)
         elif type == EventType.NUMERIC_INPUT:
             if data.component_id == 0: # Extruder target temperature
-                self._numeric_input = data.value
-            elif data.component_id == 1: # Heatbed target temperature
-                self._numeric_input = data.value
-            elif data.component_id == 2: # Chamber target temperature
-                self._numeric_input = data.value
-            else:
-                log.info(f"ControlPage: onDisplayEvent: EventType: {type}, data: {data}")
-                
-    async def onPrinterStatusUpdate(self, data: dict):
-        #log.info(f"ControlPage: onPrinterStatusUpdate: {data}")
-
-        state = data["print_stats"]["state"]
-        if state == "printing":
-            self.changePage(PrintingPage)
-
-        # Extruder actual value
-        await self.state.display.set("n0.val", int(data["extruder"]["temperature"]))
-
-        # Heatbed actual value
-        await self.state.display.set("n1.val", int(data["heater_bed"]["temperature"]))
-
-        # Chamber actual value
-        await self.state.display.set(
-            "n2.val", int(data["heater_generic chamber"]["temperature"])
-        )
-
-        """
-        # Fans handling with null checks
-        def get_fan_speed(fan_data: dict) -> int:
-            #Safely get fan speed as percentage
-            if not fan_data or fan_data.get("speed") is None:
-                return 0
-            return int(fan_data["speed"] * 100)
-
-        fan_speed_1 = get_fan_speed(data.get("fan_generic cooling_fan"))
-        await self.state.display.set("n6.val", fan_speed_1)
-
-        fan_speed_2 = get_fan_speed(data.get("fan_generic auxiliary_cooling_fan"))
-        await self.state.display.set("n7.val", fan_speed_2)
-
-        fan_speed_3 = get_fan_speed(data.get("heater_fan chamber_fan"))
-        await self.state.display.set("n8.val", fan_speed_3)
-
-        await self.setHighlight("b6", fan_speed_1 > 0)
-        await self.setHighlight("b7", fan_speed_2 > 0)
-        await self.setHighlight("b8", fan_speed_3 > 0)
-        """
-
-    def start_retract(self):
-        #self.state.printer.runGcode(f"M83\nG1 E-{str(self._printer_filament_extruedr_dist)} F300\n")
-        pass
-
-    def start_extrude(self):
-        #self.state.printer.runGcode(f"M83\nG1 E{str(self._printer_filament_extruedr_dist)} F300\n")
-        pass
-
-class ControlKbPage(OpenP4Page):
-    @classproperty
-    def name(cls) -> str:
-        return "control_kb"
-
-    @classproperty
-    def id(cls) -> int:
-        return 36
-    
-    # Initialize display components
-    async def init(self):
-        self.input_value = ""
-
-    async def onDisplayEvent(self, type: EventType, data):
-        #log.info(f"ControlKbPage: onDisplayEvent: EventType: {type}, data: {data}")
-        if type == EventType.TOUCH:
-            self.handleScreenSleep(data.page_id)
-            if data.component_id < 6: # target temperature
-                self.changePage(ControlKbPage)
-            if data.component_id == 22: # fan control
-                self.changePage(ControlKbPage)
-            else:
-                self.handleNavBarButtons(data.component_id)
-        elif type == EventType.NUMERIC_INPUT:
-            if data.component_id == 0: # Extruder target temperature
                 if MAX_EXTRUDER_TEMP < data.value:
                     self._numeric_input = MAX_EXTRUDER_TEMP
                 else:
                     self._numeric_input = data.value
-
-                #set_extruder_target(local_c[0]);
-                #set_target("extruder",param_1);
-                #set_heater_temp(asStack_40,asStack_20,param_2);
-                #json_run_a_gcode(asStack_60,asStack_40);
-                #MakerbaseClient::Send(pMVar1,asStack_60);
-
-                # Sets the target temperature for a heater. If a target temperature is not supplied, the target is 0.
                 self.state.printer.runGcode(f"SET_HEATER_TEMPERATURE HEATER=extruder TARGET={str(self._numeric_input)}")
-
-                #set_mks_extruder_target(local_c[0]);
-                #mksini_load();
-                #std::__cxx11::string::string<>(asStack_70,"target",aaStack_50);
-                #std::__cxx11::string::string<>(asStack_48,"extruder",aaStack_28);
-                #std::__cxx11::to_string((__cxx11 *)(ulong)(uint)param_1,extraout_w1);
-                #mksini_set(asStack_70,asStack_48,asStack_20);
-                #mksini_save();
-                #mksini_free();
-
             elif data.component_id == 1: # Heatbed target temperature
                 if MAX_HEATER_BED_TEMP < data.value:
                     self._numeric_input = MAX_HEATER_BED_TEMP
@@ -1704,35 +1860,6 @@ class ControlKbPage(OpenP4Page):
                 else:
                     self._numeric_input = data.value
                 self.state.printer.runGcode(f"SET_HEATER_TEMPERATURE HEATER=chamber TARGET={str(self._numeric_input)}")
-                #self.state.printer.runMacro(f"M141 S"{str(self._numeric_input)}) #M141 - Set Chamber Temperature
-            elif data.component_id == 22: # set_fan0
-                if data.value < 101:
-                    self._numeric_input = data.value * 255 / 100
-                else:
-                    self._numeric_input = 255 # Turn on fan at full speed
-                self._move_fan_setting = 0
-                #set_fan0_speed
-                # M106 S0 # Turn off part cooling fan
-                # M106 S255  # Turn on fan at full speed
-                # Turn off all fans (main, secondary, and tertiary)
-                # M106 P2 S0
-                # M106 P0 S0
-                # M106 P3 S0
-                self.state.printer.runGcode(f"M106 P1 S={str(self._numeric_input)}")
-            elif data.component_id == 23: # set_fan1
-                if data.value < 101:
-                    self._numeric_input = data.value * 255 / 100
-                else:
-                    self._numeric_input = 255 # Turn on fan at full speed
-                self._move_fan_setting = 0
-                self.state.printer.runGcode(f"M106 P2 S={str(self._numeric_input)}")
-            elif data.component_id == 24: # set_fan2
-                if data.value < 101:
-                    self._numeric_input = data.value * 255 / 100
-                else:
-                    self._numeric_input = 255 # Turn on fan at full speed
-                self._move_fan_setting = 0
-                self.state.printer.runGcode(f"M106 P3 S={str(self._numeric_input)}")
             else:
                 log.info(f"ControlKbPage: onDisplayEvent: EventType: {type}, data: {data}")
 
@@ -2083,8 +2210,19 @@ class ScreenSleepPage(OpenP4Page):
 
     async def onDisplayEvent(self, type: EventType, data):
         if type == EventType.TOUCH:
-            self.changePage(self.state.return_page)
-            self.state.return_page = None  # Clear return page
+            #prints 0x65,1
+            #prints dp,1
+            #prints 0,1
+            #prints 0xff,1
+            #prints 0xff,1
+            #prints 0xff,1
+            if data.component_id == 0:
+                self.changePage(self.state.return_page)
+                self.state.return_page = None  # Clear return page
+            elif data.component_id == 1:
+                log.info(f"ScreenSleepPage: component_id = 1")
+            else:
+                pass
 
     async def onPrinterStatusUpdate(self, data: dict):
         pass
@@ -2605,6 +2743,7 @@ class ControlSetFanPage(OpenP4Page):
             elif data.component_id == 22: # Button Back
                 log.info(f"ControlSetFanPage: Button Back")
                 #self.changePage(self.state.return_page)
+                self.changePage(ControlPage)
                 
             elif data.component_id == 34: # ignore NavBar control button
                 log.info(f"ControlSetFanPage: ignore NavBar control button")
@@ -2656,7 +2795,9 @@ class ControlSetFanPage(OpenP4Page):
 
         # n8.val="Chamber \rCirculation Fan" %
         # t2.txt="Chamber \rCirculation Fan"
-        self._fan3_speed = get_fan_speed(data.get("heater_fan chamber_fan"))
+        self._fan3_speed = get_fan_speed(data.get("fan_generic exhaust_fan"))
+        #self._fan3_speed = get_fan_speed(data.get("heater_fan chamber_fan"))
+
         await self.state.display.set("n8.val", self._fan3_speed)
         await self.setHighlightFan("b8", self._fan3_speed > 0)
 
@@ -2853,13 +2994,99 @@ class ServerSetPage(OpenP4Page):
         await self.state.display.set("t12.txt", 1)
 '''
 
+class SearchServerPage(OpenP4Page):
 
-'''
-| 64  | 0x40 | search_server       |
-| 65  | 0x41 | online_update       |
-| 66  | 0x42 | offline_update      |
-| 67  | 0x43 | installing          |
-'''
+    @classproperty
+    def name(cls) -> str:
+        return "search_server"
+
+    @classproperty
+    def id(cls) -> int:
+        return 64
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                pass
+            else:  
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OnlineUpdatePage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "online_update"
+
+    @classproperty
+    def id(cls) -> int:
+        return 65
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                pass
+            else:  
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OfflineUpdatePage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "offline_update"
+
+    @classproperty
+    def id(cls) -> int:
+        return 66
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                pass
+            else:  
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class InstallingPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "installing"
+
+    @classproperty
+    def id(cls) -> int:
+        return 67
+
+    async def init(self):
+        pass
+        # t0.txt
+        # Installing....
+
+    async def onDisplayEvent(self, type: EventType, data):
+        pass
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
 
 class BtnConflictPage(OpenP4Page):
 
@@ -2873,6 +3100,8 @@ class BtnConflictPage(OpenP4Page):
 
     async def init(self):
         pass
+        # t0.txt
+        # Please wait until current operation \rfinish.
 
     async def onDisplayEvent(self, type: EventType, data):
         if type == EventType.TOUCH:
@@ -2882,38 +3111,501 @@ class BtnConflictPage(OpenP4Page):
 
     async def onPrinterStatusUpdate(self, data: dict):
         pass
-        # t0.txt
-        # Please wait until current operation \rfinish.
 
-    
+
+class Language2Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "language_2"
+
+    @classproperty
+    def id(cls) -> int:
+        return 69
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                pass
+            else:  
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class LowTempPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "low_temp"
+
+    @classproperty
+    def id(cls) -> int:
+        return 70
+
+    async def init(self):
+        pass
+        # t0.txt
+        # The temperature of the nozzle is too \rlow.Please click the button again \rafter the temperature reaches the set \rtemperature.
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                self.changePage(self.state.return_page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class Load2Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "load_2"
+
+    @classproperty
+    def id(cls) -> int:
+        return 71
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                pass
+            else:  
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class LoadFinishPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "load_finish"
+
+    @classproperty
+    def id(cls) -> int:
+        return 72
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                pass
+            else:  
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class AutoWarningPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "auto_warning"
+
+    @classproperty
+    def id(cls) -> int:
+        return 73
+
+    async def init(self):
+        pass
+        # t0.txt
+        # Please set the temperature to above 35 ℃.
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                self.changePage(self.state.return_page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class CalWarningPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "cal_warning"
+
+    @classproperty
+    def id(cls) -> int:
+        return 74
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                pass
+            else:  
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class RePrintingPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "re_printing"
+
+    @classproperty
+    def id(cls) -> int:
+        return 75
+
+    async def init(self):
+        pass
+        # t0.txt
+        # Restoring printing...
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                self.changePage(self.state.return_page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenLanguage1Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_language1"
+
+    @classproperty
+    def id(cls) -> int:
+        return 76
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                self.changePage(self.state.return_page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenLanguage2Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_language2"
+
+    @classproperty
+    def id(cls) -> int:
+        return 77
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0:
+                self.changePage(self.state.return_page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenSkipPopPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_skip_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 78
+
+    async def init(self):
+        pass
+        # t0.txt
+        # Are you sure to skip start-guide?
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: # Confirm
+                self.changePage(self.state.return_page)
+            if data.component_id == 1: # Cancel
+                self.changePage(self.state.return_page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenUnpack1Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_unpack1"
+
+    @classproperty
+    def id(cls) -> int:
+        return 79
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: # Next
+                self.changePage(OpenUnpack2Page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenUnpack2Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_unpack2"
+
+    @classproperty
+    def id(cls) -> int:
+        return 80
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: # Next
+                self.changePage(OpenUnpack3Page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenUnpack3Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_unpack3"
+
+    @classproperty
+    def id(cls) -> int:
+        return 81
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: # Next
+                self.changePage(OpenUnpack4Page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenUnpack4Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_unpack4"
+
+    @classproperty
+    def id(cls) -> int:
+        return 82
+
+    async def init(self):
+        pass
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: # Next
+                self.changePage(MainPage)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenLoad1Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_load1"
+
+    @classproperty
+    def id(cls) -> int:
+        return 83
+
+    async def init(self):
+        pass
+        #t0.txt="Language"
+        #t1.txt="Unboxing"
+        #t2.txt="Load"
+        #t3.txt="Install the supplies holder."
+        
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: # Next
+                self.changePage(OpenUnpack2Page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenLoad2Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_load2"
+
+    @classproperty
+    def id(cls) -> int:
+        return 84
+
+    async def init(self):
+        pass
+        #t0.txt="Language"
+        #t1.txt="Unboxing"
+        #t2.txt="Load"
+        #t3.txt="Keep pushing the filament \rinto the filament tube \runtill reach extruder."
+        
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: # Next
+                self.changePage(OpenUnpack3Page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenLoad3Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_load3"
+
+    @classproperty
+    def id(cls) -> int:
+        return 85
+
+    async def init(self):
+        pass
+        #t0.txt="Language"
+        #t1.txt="Unboxing"
+        #t2.txt="Load"
+        #t3.txt="Set the corresponding \rnozzle temperature for \rthe filament and start \rheating."
+        #t4.txt="Attention: Wait for the \rnozzle temperature to \rreach the set temperature \rbefore clicking Next."
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: # Next
+                self.changePage(OpenUnpack4Page)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenLoad4Page(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_load4"
+
+    @classproperty
+    def id(cls) -> int:
+        return 86
+
+    async def init(self):
+        pass
+        #t0.txt="Language"
+        #t1.txt="Unboxing"
+        #t2.txt="Load"
+        #t3.txt="Click load button and keep \rpushing the filament until it come out from the nozzle."
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: #b0.txt="Next"
+                self.changePage(OpenFinishPage)
+            if data.component_id == 1: #b1.txt="Load"
+                pass
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OpenFinishPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "open_finish"
+
+    @classproperty
+    def id(cls) -> int:
+        return 86
+
+    async def init(self):
+        pass
+        #t0.txt="Language"
+        #t1.txt="Unboxing"
+        #t2.txt="Load"
+        #t3.txt="Congrats!guide tutorial finished."
+        #t4.txt="Attention: Input shaping will be \rautomatically performed."
+        
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: #b0.txt="Completed"
+                self.changePage(MainPage) # Input shaping will be \rautomatically performed."
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
 '''
-| 69  | 0x45 | language_2          |
-| 70  | 0x46 | low_temp            |
-| 71  | 0x47 | load_2              |
-| 72  | 0x48 | load_finish         |
-| 73  | 0x49 | auto_warning        |
-| 74  | 0x4A | cal_warning         |
-| 75  | 0x4B | re_printing         |
-| 76  | 0x4C | open_language1      |
-| 77  | 0x4D | open_language2      |
-| 78  | 0x4E | open_skip_pop       |
-| 79  | 0x4F | open_unpack1        |
-| 80  | 0x50 | open_unpack2        |
-| 81  | 0x51 | open_unpack3        |
-| 82  | 0x52 | open_unpack4        |
-| 83  | 0x53 | open_load1          |
-| 84  | 0x54 | open_load2          |
-| 85  | 0x55 | open_load3          |
-| 86  | 0x56 | open_load4          |
-| 87  | 0x57 | open_finish         |
 | 88  | 0x58 | connect_set         |
 | 89  | 0x59 | account_list        |
 | 90  | 0x5A | add_account         |
 | 91  | 0x5B | reset_account       |
 | 92  | 0x5C | account_kb          |
 | 93  | 0x5D | account_pop         |
-| 94  | 0x5E | more_pop            |
 '''
+
+
+class MorePopPage(OpenP4Page):
+
+    @classproperty
+    def name(cls) -> str:
+        return "more_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 894
+
+    async def init(self):
+        pass
+        #t0.txt="Do you want to restore factory \rsettings?"
+        
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            if data.component_id == 0: #b0.txt="Confirm"
+                pass
+            if data.component_id == 1: #b1.txt="Cancel"
+                pass
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
 
 class ToolSelectPage(OpenP4Page):
     @classproperty
@@ -2943,50 +3635,1332 @@ class ToolSelectPage(OpenP4Page):
     async def onPrinterStatusUpdate(self, data: dict):
         pass
 
-'''
-| 96  | 0x60 | dry                 |
-| 97  | 0x61 | dry_prepare         |
-| 98  | 0x62 | dry_tips            |
-| 99  | 0x63 | dry_select          |
-| 100 | 0x64 | drying              |
-| 101 | 0x65 | dry_finish          |
-| 102 | 0x66 | debug               |
-| 103 | 0x67 | dry_warn1           |
-| 104 | 0x68 | dry_warn2           |
-| 105 | 0x69 | user_info           |
-| 106 | 0x6A | network_test        |
-| 107 | 0x6B | user_exit           |
-| 108 | 0x6C | connect_server      |
-| 109 | 0x6D | server_success      |
-| 110 | 0x6E | server_fail         |
-| 111 | 0x6F | forget_pwd          |
-| 112 | 0x70 | bed_heat_rules      |
-| 113 | 0x71 | zero_box_page       |
-| 114 | 0x72 | one_box_page        |
-| 115 | 0x73 | multi_box_page      |
-| 116 | 0x74 | user_guide          |
-| 117 | 0x75 | slot_params         |
-| 118 | 0x76 | vendor_set          |
-| 119 | 0x77 | filament_set        |
-| 120 | 0x78 | color_set           |
-| 121 | 0x79 | mc_print_set        |
-| 122 | 0x7A | unconnect_pop       |
-| 123 | 0x7B | vendor_pop          |
-| 124 | 0x7C | box_error_pop       |
-| 125 | 0x7D | data_pop            |
-| 126 | 0x7E | no_fila_pop         |
-| 127 | 0x7F | load_step1          |
-| 128 | 0x80 | load_step2          |
-| 129 | 0x81 | box_unlink_pop      |
-| 130 | 0x82 | box_link_pop        |
-| 131 | 0x83 | box_update_pop      |
-| 132 | 0x84 | load_error_pop      |
-| 133 | 0x85 | box_setting         |
-| 134 | 0x86 | fila_not_match      |
-| 135 | 0x87 | box_drying          |
-| 136 | 0x88 | drying_insp         |
-| 137 | 0x89 | page0               |
-'''
+
+class DryPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "dry"
+
+    @classproperty
+    def id(cls) -> int:
+        return 96
+
+    async def init(self):
+        pass
+        #t0.txt="1. Please check the platform and the bottom of the \rmachine to ensure that there are no debris. \r2. After initialization, cover the consumables with a \rbox and start drying by selecting the filament type."
+        #t1.txt="Attention: Please use a box that is resistant to \rhigh temperatures."
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: # Play
+                pass
+            elif data.component_id == 1:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class DryPreparePage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "dry_prepare"
+
+    @classproperty
+    def id(cls) -> int:
+        return 97
+
+    async def init(self):
+        pass
+        #t0.txt="Initializing location, please wait..."
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            elif data.component_id == 1:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class DryTipsPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "dry_tips"
+
+    @classproperty
+    def id(cls) -> int:
+        return 98
+
+    async def init(self):
+        pass
+        #t0.txt="Please select consumables in the \rupper left corner"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #b0.txt="Back"
+                pass
+            elif data.component_id == 1: #b1.txt="Start"
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class DrySelectPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "dry_select"
+
+    @classproperty
+    def id(cls) -> int:
+        return 99
+
+    async def init(self):
+        pass
+        #t0.txt="Please select consumables in the \rupper left corner"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            elif data.component_id == 1:
+                pass
+            elif data.component_id == 2:
+                pass
+            elif data.component_id == 3:
+                pass
+            elif data.component_id == 4:
+                pass
+            elif data.component_id == 5:
+                pass
+            elif data.component_id == 6: #button up
+                pass
+            elif data.component_id == 7: #button down
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        #t1.txt
+        #t2.txt
+        #t3.txt
+        #t4.txt
+        #t5.txt
+        #t11.txt
+        #t12.txt
+        pass
+
+
+class DryingPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "drying"
+
+    @classproperty
+    def id(cls) -> int:
+        return 100
+
+    async def init(self):
+        pass
+        #t0.txt="Suggest flipping the consumables \revery 6 hours"
+        #t1.txt="Caution: Be careful of high \rtemperature burns"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #b0.txt="Stop"
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        #t2.txt
+        #t11.txt
+        #t12.txt
+        #t13.txt
+        #t14.txt
+        #t15.txt
+        pass
+
+
+class DryingFinishPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "dry_finish"
+
+    @classproperty
+    def id(cls) -> int:
+        return 101
+
+    async def init(self):
+        pass
+        #t0.txt="Remove the consumables as soon as they \rcool down."
+        #t1.txt="It is recommended to put the consumables \rin a protective box to avoid moisture again."
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #b0.txt="Confirm"
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class DebugPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "debug"
+
+    @classproperty
+    def id(cls) -> int:
+        return 102
+
+    async def init(self):
+        pass
+        #t0.txt="温腔"
+        #t1.txt="挤出机"
+        #t2.txt="热床"
+        #t3.txt="热传保护"
+        #t9.txt="重试次数"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #Exit"
+                self.changePage(MainPage)
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+        #t4.txt="0°C"
+        #t5.txt="0°C"
+        #t6.txt="0°C"
+        #t7.txt="0°C"
+        #t10.txt="0°C"
+
+
+class DryWarn1Page(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "dry_warn1"
+
+    @classproperty
+    def id(cls) -> int:
+        return 103
+
+    async def init(self):
+        pass
+        #t0.txt="Please configure consumables \rbefore use"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #Confirm"
+                self.changePage(MainPage)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class DryWarn2Page(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "dry_warn2"
+
+    @classproperty
+    def id(cls) -> int:
+        return 104
+
+    async def init(self):
+        pass
+        #t0.txt="Please select the type of consumables"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #Confirm"
+                self.changePage(MainPage)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class UserInfoPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "user_info"
+
+    @classproperty
+    def id(cls) -> int:
+        return 105
+
+    async def init(self):
+        pass
+        #t0.txt="Languages"
+        #t1.txt="Network"
+        #t2.txt="System message"
+        #t4.txt="Check for updates"
+        #t5.txt="more"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                self.changePage(LanguagePage)
+            elif data.component_id == 1:
+                self.changePage(NetworkPage)
+            elif data.component_id == 2:
+                self.changePage(ResetPage)
+            elif data.component_id == 4:
+                self.changePage(UpdatePage)
+            elif data.component_id == 5:
+                self.changePage(MorePage)
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+        #t6.txt="Device code:"
+        #t3.txt=""
+        #t7.txt=""
+        #t8.txt=""
+
+
+class NetworkTestPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "network_test"
+
+    @classproperty
+    def id(cls) -> int:
+        return 106
+
+    async def init(self):
+        pass
+        #t0.txt="Languages"
+        #t1.txt="Network"
+        #t2.txt="System message"
+        #t4.txt="Check for updates"
+        #t5.txt="more"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                self.changePage(LanguagePage)
+            elif data.component_id == 1:
+                self.changePage(NetworkPage)
+            elif data.component_id == 2:
+                self.changePage(ResetPage)
+            elif data.component_id == 4:
+                self.changePage(UpdatePage)
+            elif data.component_id == 5:
+                self.changePage(MorePage)
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+        #t11.txt="No network connection"
+        #t12.txt="Local network connected"
+        #t3.txt="Router delay"
+        #t6.txt="Testing..."
+        #t8.txt="Server delay"
+        #t13.txt="Testing..."
+        #t7.txt="(Average delay: "
+        #t14.txt="(Average delay: "
+        #t16.txt="Test failed, please check the network"
+        #t17.txt="Test failed, please check the network"
+
+
+class UserExitPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "user_exit"
+
+    @classproperty
+    def id(cls) -> int:
+        return 107
+
+    async def init(self):
+        pass
+        #t0.txt="Do you want to \rlog out of the account?"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #b0.txt="Confirm"
+                self.changePage(MainPage)
+            elif data.component_id == 1: #b1.txt="Cancel"
+                self.changePage(MainPage)
+ 
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class ConnectServerPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "connect_server"
+
+    @classproperty
+    def id(cls) -> int:
+        return 108
+
+    async def init(self):
+        pass
+        #t0.txt="Switching servers..."
+
+    async def onDisplayEvent(self, type: EventType, data):
+        pass
+ 
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class ServerSuccessPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "server_success"
+
+    @classproperty
+    def id(cls) -> int:
+        return 109
+
+    async def init(self):
+        pass
+        #t0.txt="Successfully switched servers"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #b0.txt="Confirm"
+                self.changePage(MainPage)
+ 
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class ServerFailPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "server_fail"
+
+    @classproperty
+    def id(cls) -> int:
+        return 110
+
+    async def init(self):
+        pass
+        #t0.txt="Server switching failed"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #b0.txt="Confirm"
+                self.changePage(MainPage)
+ 
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class ForgetPwdPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "forget_pwd"
+
+    @classproperty
+    def id(cls) -> int:
+        return 111
+
+    async def init(self):
+        pass
+        #t0.txt="Are you sure you want to\rremove this connection?"
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #b0.txt="Confirm"
+                self.changePage(MainPage)
+            elif data.component_id == 1: #b1.txt="Cancel"
+                self.changePage(MainPage)
+ 
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class BedHeatRulesPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "bed_heat_rules"
+
+    @classproperty
+    def id(cls) -> int:
+        return 112
+
+    async def init(self):
+        pass
+        #t0.txt="The hotbed temperature is too low,\rand it will automatically heat up."
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0: #b0.txt="Confirm"
+                self.changePage(MainPage)
+ 
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class ZeroBoxPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "zero_box_page"
+
+    @classproperty
+    def id(cls) -> int:
+        return 113
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            elif data.component_id == 1:
+                #page_to(0x23);
+                self.changePage(ControlPage)
+            elif data.component_id == 2:
+                self.changePage(UserGuidePage)
+                #page_to(0x74);
+            elif data.component_id == 3:
+                #slot[0x10bc] = 0x71;
+                #MultiColorSlots::SetLoadTarget();
+                self.changePage(LoadStep1Page) #page_to(0x7f);
+                #send_cmd_vis(tty_fd,"gm0","1");
+            elif data.component_id == 4:
+                #MultiColorSlots::SetLoadTarget();
+                #filament_unload();
+                self.changePage(UnloadPage) #page_to(0x28);
+            elif data.component_id == 5:
+                pass
+                #puVar20 = (undefined4 *)MultiColorSlots::UpdateBoxStates((MultiColorSlots *)slot);
+            elif data.component_id == 6:
+                self.changePage(SlotParamsPage) #page_to(0x75);
+                #MultiColorSlots::SetSingleSlot((MultiColorSlots *)slot,"a0");
+            elif data.component_id == 7:
+                pass
+                #MultiColorSlots::SetSelectedSlotIndex((MultiColorSlots *)slot,0);
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class OneBoxPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "one_box_page"
+
+    @classproperty
+    def id(cls) -> int:
+        return 114
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                self.changePage(ControlPage) #page_to(0x23);
+            if data.component_id == 1:
+                pass
+                #MultiColorSlots::HandleUninstallEvent((MultiColorSlots *)slot);
+            elif data.component_id == 2:
+                pass
+                #MultiColorSlots::HandleLoadEvent((MultiColorSlots *)slot);
+            elif data.component_id == 3:
+                pass
+                #MultiColorSlots::HandleUnloadEvent((MultiColorSlots *)slot);
+            elif data.component_id == 4:
+                self.changePage(SlotParamsPage) #page_to(0x75);
+            elif data.component_id == 5:
+                self.changePage(SlotParamsPage)
+            elif data.component_id == 6:
+                self.changePage(SlotParamsPage)
+            elif data.component_id == 7:
+                self.changePage(SlotParamsPage)
+            elif data.component_id == 8:
+                self.changePage(SlotParamsPage)
+            elif data.component_id == 9:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p5");
+            elif data.component_id == 10:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p6");
+            elif data.component_id == 11:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p7");
+            elif data.component_id == 12:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p8");
+            elif data.component_id == 13:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p9");
+            elif data.component_id == 15:
+                pass
+                #MultiColorSlots::SetSelectedSlotIndex((MultiColorSlots *)slot,-1);
+                #MultiColorSlots::SetSelectedBoxIndex((MultiColorSlots *)slot,0);
+            elif data.component_id == 16:
+                pass
+                #MultiColorSlots::SetSelectedSlotIndex((MultiColorSlots *)slot,-1);
+                #MultiColorSlots::SetSelectedBoxIndex((MultiColorSlots *)slot,1);
+            elif data.component_id == 17:
+                pass
+                #MultiColorSlots::SetSelectedSlotIndex((MultiColorSlots *)slot,-1);
+                #MultiColorSlots::SetSelectedBoxIndex((MultiColorSlots *)slot,2);
+            elif data.component_id == 18:
+                pass
+                #MultiColorSlots::SetSelectedSlotIndex((MultiColorSlots *)slot,-1);
+                #MultiColorSlots::SetSelectedBoxIndex((MultiColorSlots *)slot,3);
+            elif data.component_id == 19:
+                self.changePage(BoxSettingsPage) #page_to(0x85);
+            elif data.component_id == 20:
+                pass
+                #MultiColorSlots::ControlShowKeypad((MultiColorSlots *)slot,"display");
+            elif data.component_id == 23:
+                pass
+                #MultiColorSlots::HandleRetryEvent();
+            elif data.component_id == 39:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x28);
+            elif data.component_id == 40:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x29);
+            elif data.component_id == 41:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2a);
+            elif data.component_id == 42:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2b);
+            elif data.component_id == 43:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2c);
+            elif data.component_id == 44:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2d);
+            elif data.component_id == 45:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2e);
+            elif data.component_id == 46:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2f);
+            elif data.component_id == 47:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x30);
+            elif data.component_id == 48:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x31);
+            elif data.component_id == 49:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x32);
+            elif data.component_id == 50:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x33);
+            elif data.component_id == 70:
+                pass
+                #MultiColorSlots::HandleRfidEvent((MultiColorSlots *)slot);
+            elif data.component_id == 71:
+                pass
+                #MultiColorSlots::HandleRfidEvent((MultiColorSlots *)slot);
+            elif data.component_id == 72:
+                pass
+                #MultiColorSlots::HandleRfidEvent((MultiColorSlots *)slot);
+            elif data.component_id == 73:
+                pass
+                #MultiColorSlots::HandleRfidEvent((MultiColorSlots *)slot);
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class MultiBoxPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "multi_box_page"
+
+    @classproperty
+    def id(cls) -> int:
+        return 115
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                self.changePage(ControlPage) #page_to(0x23);
+            if data.component_id == 1:
+                pass
+                #MultiColorSlots::HandleUninstallEvent((MultiColorSlots *)slot);
+            elif data.component_id == 2:
+                pass
+                #MultiColorSlots::HandleLoadEvent((MultiColorSlots *)slot);
+            elif data.component_id == 3:
+                pass
+                #MultiColorSlots::HandleUnloadEvent((MultiColorSlots *)slot);
+            elif data.component_id == 4:
+                pass
+                #MultiColorSlots::SetSingleSlot((MultiColorSlots *)slot,"a0");
+            elif data.component_id == 5:
+                #MultiColorSlots::GetSelectedBox[abi:cxx11]();
+                #MultiColorSlots::SetMultiColorSlot((MultiColorSlots *)slot,asStack_4b8,1);
+                self.changePage(SlotParamsPage) #page_to(0x75);
+            elif data.component_id == 6:
+                #MultiColorSlots::GetSelectedBox[abi:cxx11]();
+                #MultiColorSlots::SetMultiColorSlot((MultiColorSlots *)slot,asStack_498,2);
+                self.changePage(SlotParamsPage)
+            elif data.component_id == 7:
+                #MultiColorSlots::GetSelectedBox[abi:cxx11]();
+                #MultiColorSlots::SetMultiColorSlot((MultiColorSlots *)slot,asStack_478,3);
+                self.changePage(SlotParamsPage)
+            elif data.component_id == 8:
+                #MultiColorSlots::GetSelectedBox[abi:cxx11]();
+                #MultiColorSlots::SetMultiColorSlot((MultiColorSlots *)slot,asStack_458,4);
+                self.changePage(SlotParamsPage)
+            elif data.component_id == 9:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p5");
+            elif data.component_id == 10:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p6");
+            elif data.component_id == 11:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p7");
+            elif data.component_id == 12:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p8");
+            elif data.component_id == 13:
+                pass
+                #MultiColorSlots::UpdateSlotOperationUI((MultiColorSlots *)slot,"p9");
+            elif data.component_id == 15:
+                pass
+                '''
+                iVar9 = MultiColorSlots::GetStatusBox1((MultiColorSlots *)slot);
+                if (iVar9 == 0) {
+                    page_to(0x7a);
+                    MultiColorSlots::GetSelectedBox[abi:cxx11]();
+                            /* try { // try from 0073ae40 to 0073ae43 has its CatchHandler @ 0073ce0c */
+                    MultiColorSlots::SetSelectedBox((MultiColorSlots *)slot,asStack_370);
+                    puVar20 = (undefined4 *)std::__cxx11::string::~string(asStack_370);
+                }
+                else {
+                    std::allocator<char>::allocator();
+                            /* try { // try from 0073ae70 to 0073ae73 has its CatchHandler @ 0073ce30 */
+                    std::__cxx11::string::string<>(asStack_350,"box1",aaStack_330);
+                            /* try { // try from 0073ae84 to 0073ae87 has its CatchHandler @ 0073ce20 */
+                    MultiColorSlots::SetSelectedBox((MultiColorSlots *)slot,asStack_350);
+                    std::__cxx11::string::~string(asStack_350);
+                    std::allocator<char>::~allocator((allocator<char> *)aaStack_330);
+                    puVar20 = (undefined4 *)page_to(0x73);
+                }
+                '''
+            elif data.component_id == 16:
+                pass
+                '''
+                iVar9 = MultiColorSlots::GetStatusBox2((MultiColorSlots *)slot);
+                if (iVar9 == 0) {
+                    page_to(0x7a);
+                    MultiColorSlots::GetSelectedBox[abi:cxx11]();
+                            /* try { // try from 0073aef0 to 0073aef3 has its CatchHandler @ 0073ce44 */
+                    MultiColorSlots::SetSelectedBox((MultiColorSlots *)slot,asStack_328);
+                    puVar20 = (undefined4 *)std::__cxx11::string::~string(asStack_328);
+                }
+                else {
+                    std::allocator<char>::allocator();
+                            /* try { // try from 0073af20 to 0073af23 has its CatchHandler @ 0073ce68 */
+                    std::__cxx11::string::string<>(asStack_308,"box2",aaStack_2e8);
+                            /* try { // try from 0073af34 to 0073af37 has its CatchHandler @ 0073ce58 */
+                    MultiColorSlots::SetSelectedBox((MultiColorSlots *)slot,asStack_308);
+                    std::__cxx11::string::~string(asStack_308);
+                    std::allocator<char>::~allocator((allocator<char> *)aaStack_2e8);
+                    puVar20 = (undefined4 *)page_to(0x73);
+                }
+                '''
+            elif data.component_id == 17:
+                pass
+                '''
+                iVar9 = MultiColorSlots::GetStatusBox3((MultiColorSlots *)slot);
+                if (iVar9 == 0) {
+                    page_to(0x7a);
+                    MultiColorSlots::GetSelectedBox[abi:cxx11]();
+                            /* try { // try from 0073afa0 to 0073afa3 has its CatchHandler @ 0073ce7c */
+                    MultiColorSlots::SetSelectedBox((MultiColorSlots *)slot,asStack_2e0);
+                    puVar20 = (undefined4 *)std::__cxx11::string::~string(asStack_2e0);
+                }
+                else {
+                    std::allocator<char>::allocator();
+                            /* try { // try from 0073afd0 to 0073afd3 has its CatchHandler @ 0073cea0 */
+                    std::__cxx11::string::string<>(asStack_2c0,"box3",aaStack_2a0);
+                            /* try { // try from 0073afe4 to 0073afe7 has its CatchHandler @ 0073ce90 */
+                    MultiColorSlots::SetSelectedBox((MultiColorSlots *)slot,asStack_2c0);
+                    std::__cxx11::string::~string(asStack_2c0);
+                    std::allocator<char>::~allocator((allocator<char> *)aaStack_2a0);
+                    puVar20 = (undefined4 *)page_to(0x73);
+                }
+                '''
+            elif data.component_id == 18:
+                pass
+                '''
+                iVar9 = MultiColorSlots::GetStatusBox4((MultiColorSlots *)slot);
+                if (iVar9 == 0) {
+                    page_to(0x7a);
+                    MultiColorSlots::GetSelectedBox[abi:cxx11]();
+                            /* try { // try from 0073b050 to 0073b053 has its CatchHandler @ 0073ceb4 */
+                    MultiColorSlots::SetSelectedBox((MultiColorSlots *)slot,asStack_298);
+                    puVar20 = (undefined4 *)std::__cxx11::string::~string(asStack_298);
+                }
+                else {
+                    std::allocator<char>::allocator();
+                            /* try { // try from 0073b080 to 0073b083 has its CatchHandler @ 0073ced8 */
+                    std::__cxx11::string::string<>(asStack_278,"box4",aaStack_258);
+                            /* try { // try from 0073b094 to 0073b097 has its CatchHandler @ 0073cec8 */
+                    MultiColorSlots::SetSelectedBox((MultiColorSlots *)slot,asStack_278);
+                    std::__cxx11::string::~string(asStack_278);
+                    std::allocator<char>::~allocator((allocator<char> *)aaStack_258);
+                    puVar20 = (undefined4 *)page_to(0x73);
+                }
+                '''
+            elif data.component_id == 20:
+                pass
+                #MultiColorSlots::ControlShowKeypad((MultiColorSlots *)slot,"display");
+            elif data.component_id == 39:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x28);
+            elif data.component_id == 40:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x29);
+            elif data.component_id == 41:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2a);
+            elif data.component_id == 42:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2b);
+            elif data.component_id == 43:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2c);
+            elif data.component_id == 44:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2d);
+            elif data.component_id == 45:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2e);
+            elif data.component_id == 46:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x2f);
+            elif data.component_id == 47:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x30);
+            elif data.component_id == 48:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x31);
+            elif data.component_id == 49:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x32);
+            elif data.component_id == 50:
+                pass
+                #MultiColorSlots::HandleKeypadEvent((MultiColorSlots *)slot,0x33);
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class UserGuidePage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "user_guide"
+
+    @classproperty
+    def id(cls) -> int:
+        return 116
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 1:
+                self.changePage(ControlPage) #page_to(0x23);
+            if data.component_id == 2:
+                self.changePage(ZeroBoxPage) #page_to(0x71);
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class SlotParamsPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "slot_params"
+
+    @classproperty
+    def id(cls) -> int:
+        return 117
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 1:
+                self.changePage(VendorSetPage) #page_to(0x76);
+            if data.component_id == 2:
+                self.changePage(FilamentSetPage) #page_to(0x77);
+            if data.component_id == 3:
+                self.changePage(ColorSetPage) #page_to(0x78);
+            if data.component_id == 4:
+                pass
+                #MultiColorSlots::SlotParamsSetConfirm((MultiColorSlots *)slot);
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class VendorSetPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "vendor_set"
+
+    @classproperty
+    def id(cls) -> int:
+        return 118
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class FilamentSetPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "filament_set"
+
+    @classproperty
+    def id(cls) -> int:
+        return 119
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class ColorSetPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "color_set"
+
+    @classproperty
+    def id(cls) -> int:
+        return 120
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class McPrintSetPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "mc_print_set"
+
+    @classproperty
+    def id(cls) -> int:
+        return 121
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class UnconnectPopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "unconnect_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 122
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class VendorPopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "vendor_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 123
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class BoxErrorPopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "box_error_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 124
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class DataPopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "data_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 125
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class NoFilaPopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "no_fila_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 126
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class LoadStep1Page(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "load_step1"
+
+    @classproperty
+    def id(cls) -> int:
+        return 127
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class LoadStep2Page(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "load_step2"
+
+    @classproperty
+    def id(cls) -> int:
+        return 128
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class BoxUnlinkPopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "box_unlink_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 129
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class BoxLinkPopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "box_link_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 130
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class BoxUpdatePopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "box_update_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 131
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class LoadErrorPopPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "load_error_pop"
+
+    @classproperty
+    def id(cls) -> int:
+        return 132
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class BoxSettingsPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "box_setting"
+
+    @classproperty
+    def id(cls) -> int:
+        return 133
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class FilaNotMatchPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "fila_not_match"
+
+    @classproperty
+    def id(cls) -> int:
+        return 134
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class BoxDryingPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "box_drying"
+
+    @classproperty
+    def id(cls) -> int:
+        return 135
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class DryingInspPage(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "drying_insp"
+
+    @classproperty
+    def id(cls) -> int:
+        return 136
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
+
+
+class Page0Page(OpenP4Page):
+    @classproperty
+    def name(cls) -> str:
+        return "page0"
+
+    @classproperty
+    def id(cls) -> int:
+        return 137
+
+    async def onDisplayEvent(self, type: EventType, data):
+        if type == EventType.TOUCH:
+            self.handleScreenSleep(data.page_id)
+            if data.component_id == 0:
+                pass
+            else:
+                self.handleNavBarButtons(data.component_id)
+
+    async def onPrinterStatusUpdate(self, data: dict):
+        pass
 
 '''
 class FilamentPage(OpenP4Page):
